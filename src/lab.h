@@ -12,7 +12,7 @@ char *smtp_command(const char *verb, const char *argument);
 char *smtp_dot_stuff(const char *body);
 char *smtp_data_payload(const char *from, const char *to, const char *subject, const char *body);
 int smtp_has_newline(const char *value);
-void smtp_reader_init(smtp_reader *reader, smtp_transport transport);
+int smtp_reader_init(smtp_reader *reader, smtp_transport transport);
 int smtp_read_line(smtp_reader *reader, char **line);
 int smtp_read_reply(smtp_reader *reader, int *code, char **reply);
 int smtp_write_all(smtp_transport *transport, const char *data, size_t length);

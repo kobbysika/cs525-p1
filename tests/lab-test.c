@@ -24,7 +24,7 @@ static void test_commands_and_payload(void){
  TEST_ASSERT_NULL(smtp_data_payload("a\nb","c","s","body"));
 }
 static void test_fragmented_multiline_reply(void){
- script s={"250-one\r\n250 two\r\n",0,1,"",0};smtp_transport t={fake_read,fake_write,&s};smtp_reader r;smtp_reader_init(&r,t);
+ script s={"250-one\r\n250 two\r\n",0,1,"",0};smtp_transport t={fake_read,fake_write,&s};smtp_reader r;TEST_ASSERT_EQUAL_INT(0,smtp_reader_init(&r,t));
  int code=0;char *reply=NULL;TEST_ASSERT_EQUAL_INT(0,smtp_read_reply(&r,&code,&reply));TEST_ASSERT_EQUAL_INT(250,code);
  TEST_ASSERT_EQUAL_STRING("250-one\r\n250 two\r\n",reply);free(reply);
 }
