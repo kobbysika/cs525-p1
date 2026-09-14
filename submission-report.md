@@ -1,6 +1,6 @@
 # Submission Report
 
-- Submission generated at 09/12/2026 at 17:59:23
+- Submission generated at 09/14/2026 at 18:35:05
 
 - Machine info: Linux runnervmlun5p 6.17.0-1022-azure #22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
 
@@ -17,29 +17,22 @@ Post any questions on the class discussion board for help.
 
 ## README
 
-# Project X
+# Project 1
 
-- Name: John Doe
-- Email: johndoe@u.boisestate.edu
-- Class: CS123-001
+- Name: Perry Aryee
+- Email: perryaryee@u.boisestate.edu
+- Class: CS525-001
 
 ## Known Bugs or Issues
 
-TODO: Are there any known issues?
+None
 
 ## Experience
 
-TODO: Describe your experience with the project (struggles, breakthroughs, etc.).
-
-## Analysis
-
-TODO: Provide your analysis of the results. If the assignment does not require
-analysis, you can remove this section.
-
-Here is an example of how to include a plot in your README:
-
-![Example Image](scripts/example_plot.png)
-
+The main challenge was treating TCP as a stream instead of assuming each
+`recv` call returns exactly one reply. Building a buffered line reader and
+putting all I/O behind callbacks made that behavior easier to reason about and test. Testing each failure path also highlighted the importance of freeing allocated strings before returning from every stage of the session.
+The callback-based transport was initially one of the less familiar parts of the project. After using it in the tests, its purpose became clearer: the SMTP session does not need to know whether its bytes come from a socket or an in-memory script. I also gained more practice with pointers, structures, function pointers, and handling errors in C.
 ---
 
 
@@ -509,14 +502,14 @@ int main(void){UNITY_BEGIN();RUN_TEST(test_reply_helpers);RUN_TEST(test_commands
 ```
 
 ## Scripts Files
-Report generated on 09/12/2026 at 17:59:24
+Report generated on 09/14/2026 at 18:35:07
 
 
 ---
 
 ## End of Report
 
-SHA-256 Hash of the report: 5b76020050b45a746b1d8521359cf76e461f824b04ceccda40ccdb5f7e1d895b
+SHA-256 Hash of the report: 62ab398e26bb28202aef28b31568e6bf896034d26c1f519c51695570277fa1e8
 
 Do not edit the generated report. Any changes will be reported as academic dishonesty
 
