@@ -49,6 +49,13 @@ static void test_fragmented_multiline_reply(void){
  int code=0;char *reply=NULL;TEST_ASSERT_EQUAL_INT(0,smtp_read_reply(&r,&code,&reply));TEST_ASSERT_EQUAL_INT(250,code);
  TEST_ASSERT_EQUAL_STRING("250-one\r\n250 two\r\n",reply);free(reply);
 }
+static void test_reply_too_large_for_buffer(void){
+ char input[4097];memset(input,'A',sizeof(input)-1);input[sizeof(input)-1]='\0';
+ script s={input,0,0,"",0};smtp_transport t={fake_read,fake_write,&s};smtp_reader r;char *line=NULL;
+ TEST_ASSERT_EQUAL_INT(0,smtp_reader_init(&r,t));
+ TEST_ASSERT_EQUAL_INT(-1,smtp_read_line(&r,&line));
+ TEST_ASSERT_NULL(line);
+}
 static void test_complete_session(void){
  script s={"220 ready\r\n250 hello\r\n250 sender\r\n250 recipient\r\n354 go\r\n250 queued\r\n221 bye\r\n",0,2,"",0};
  smtp_transport t={fake_read,fake_write,&s};char *error=NULL;
@@ -93,6 +100,10 @@ static void test_all_session_failures(void){
  assert_session_fails("220 ok\r\n250 ok\r\n250 ok\r\n250 ok\r\n354 go\r\n550 body\r\n","550 body");
  assert_session_fails("220 ok\r\n250 ok\r\n250 ok\r\n250 ok\r\n354 go\r\n250 queued\r\n550 quit\r\n","550 quit");
 }
+static void test_server_hangs_up_mid_session(void){
+ /* The scripted server closes after HELO succeeds, before MAIL receives a reply. */
+ assert_session_fails("220 ok\r\n250 hello\r\n","connection closed");
+}
 static void test_socket_callbacks(void){
  int sockets[2];TEST_ASSERT_EQUAL_INT(0,socketpair(AF_UNIX,SOCK_STREAM,0,sockets));char buf[4]={0};
  TEST_ASSERT_EQUAL_INT(3,(int)smtp_socket_write(&sockets[0],"abc",3));TEST_ASSERT_EQUAL_INT(3,(int)smtp_socket_read(&sockets[1],buf,3));TEST_ASSERT_EQUAL_STRING("abc",buf);
@@ -101,5 +112,7 @@ static void test_socket_callbacks(void){
 }
 int main(void){UNITY_BEGIN();RUN_TEST(test_reply_helpers);RUN_TEST(test_commands_and_payload);
  RUN_TEST(test_helper_edge_cases);RUN_TEST(test_fragmented_multiline_reply);RUN_TEST(test_complete_session);
+ RUN_TEST(test_reply_too_large_for_buffer);
  RUN_TEST(test_session_error_reports_reply);RUN_TEST(test_transport_error_paths);RUN_TEST(test_bad_replies);
- RUN_TEST(test_all_session_failures);RUN_TEST(test_socket_callbacks);return UNITY_END();}
+ RUN_TEST(test_all_session_failures);RUN_TEST(test_server_hangs_up_mid_session);
+ RUN_TEST(test_socket_callbacks);return UNITY_END();}
