@@ -24,6 +24,7 @@ static char *fmt(const char *f, const char *a, const char *b, const char *c, con
 #endif
 int smtp_has_newline(const char *s) { return s && (strchr(s,'\r') || strchr(s,'\n')); }
 int smtp_reply_code(const char *s) {
+  /* RFC 5321 replies begin with three digits followed by a separator or EOL. */
   if(!s || s[0]<'0'||s[0]>'9'||s[1]<'0'||s[1]>'9'||s[2]<'0'||s[2]>'9' ||
      (s[3]!=' '&&s[3]!='-'&&s[3]!='\r'&&s[3]!='\n'&&s[3]!='\0')) return -1;
   return (s[0]-'0')*100+(s[1]-'0')*10+s[2]-'0';
@@ -35,6 +36,7 @@ char *smtp_command(const char *v,const char *a) {
 }
 char *smtp_dot_stuff(const char *body) {
   if(!body) body="";
+  /* Count leading periods first and normalize every input newline to CRLF. */
   size_t n=strlen(body), dots=0; int bol=1;
   for(size_t i=0;i<n;i++){ if(bol&&body[i]=='.') dots++; bol=body[i]=='\n'||body[i]=='\r'; }
   if(n>((size_t)-1-dots-1)/2) return NULL;
@@ -51,6 +53,7 @@ char *smtp_dot_stuff(const char *body) {
 char *smtp_data_payload(const char *from,const char *to,const char *subject,const char *body) {
   if(!from||!to||!subject||smtp_has_newline(from)||smtp_has_newline(to)||smtp_has_newline(subject)) return NULL;
   char *stuffed=smtp_dot_stuff(body); if(!stuffed) return NULL;
+  /* The terminator must start on a fresh line, but avoid adding a blank line. */
   size_t n=strlen(stuffed); const char *sep=(n>=2&&stuffed[n-2]=='\r'&&stuffed[n-1]=='\n')?"":"\r\n";
   char *p=fmt("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s",from,to,subject,stuffed);
   free(stuffed); if(!p) return NULL;
@@ -65,10 +68,12 @@ int smtp_read_line(smtp_reader *r,char **line) {
   if(!r||!line||!r->transport.read) return -1;
   *line=NULL;
   for(;;){
+    /* A read may contain part of a line or several lines, so search buffered data first. */
     for(size_t i=r->start;i+1<r->end;i++) if(r->buffer[i]=='\r'&&r->buffer[i+1]=='\n'){
       size_t n=i+2-r->start; char *p=malloc(n+1); if(!p)return -1;
       memcpy(p,r->buffer+r->start,n);p[n]='\0';r->start=i+2;*line=p;return 0;
     }
+    /* Compact any partial line before requesting more bytes from the transport. */
     if(r->start){memmove(r->buffer,r->buffer+r->start,r->end-r->start);r->end-=r->start;r->start=0;}
     if(r->end==sizeof r->buffer)return -1;
     ssize_t n=r->transport.read(r->transport.context,r->buffer+r->end,sizeof r->buffer-r->end);
@@ -79,6 +84,7 @@ int smtp_read_line(smtp_reader *r,char **line) {
 int smtp_read_reply(smtp_reader *r,int *code,char **reply) {
   if(!code||!reply)return -1;
   *reply=NULL;size_t used=0;int first=-1;
+  /* A hyphen after the status code means more reply lines follow. */
   for(;;){char *line=NULL;if(smtp_read_line(r,&line)){free(*reply);*reply=NULL;return -1;}
     int cur=smtp_reply_code(line);if(cur<0||(first>=0&&cur!=first)){free(line);free(*reply);*reply=NULL;return -1;}
     if(first<0)first=cur;
@@ -90,6 +96,7 @@ int smtp_read_reply(smtp_reader *r,int *code,char **reply) {
 int smtp_write_all(smtp_transport *t,const char *data,size_t len) {
   if(!t||!t->write||!data)return -1;
   size_t sent=0;
+  /* Stream writes may be short, even when no error occurred. */
   while(sent<len){ssize_t n=t->write(t->context,data+sent,len-sent);if(n<=0||(size_t)n>len-sent)return -1;sent+=(size_t)n;}return 0;
 }
 int smtp_send_command(smtp_reader *r,const char *cmd,int expected,char **reply) {
@@ -106,14 +113,17 @@ int smtp_run_session(smtp_transport t,const char *helo,const char *from,const ch
   if(error)*error=NULL;
   if(!helo||!from||!to||!subject||smtp_has_newline(helo)||smtp_has_newline(from)||smtp_has_newline(to)||smtp_has_newline(subject))return fail(error,"input","invalid CR or LF in field");
   smtp_reader r;if(smtp_reader_init(&r,t))return fail(error,"transport","invalid callbacks");char *reply=NULL;int code;
+  /* The server greeting is unsolicited, so read it before sending HELO. */
   if(smtp_read_reply(&r,&code,&reply)||code!=220){int x=fail(error,"greeting",reply);free(reply);return x;}free(reply);reply=NULL;
   size_t fn=strlen(from)+8,tn=strlen(to)+6;char *fa=malloc(fn),*ta=malloc(tn);
   if(!fa||!ta){free(fa);free(ta);return fail(error,"input","out of memory");}
   (void)snprintf(fa,fn,"FROM:<%s>",from);(void)snprintf(ta,tn,"TO:<%s>",to);
+  /* SMTP is sequential: do not send the next command until this reply is valid. */
   const char *verbs[]={"HELO","MAIL","RCPT","DATA"},*args[]={helo,fa,ta,NULL};int expected[]={250,250,250,354};
   for(size_t i=0;i<4;i++){char *cmd=smtp_command(verbs[i],args[i]);if(!cmd){free(fa);free(ta);return fail(error,verbs[i],"out of memory");}
     int s=smtp_send_command(&r,cmd,expected[i],&reply);free(cmd);if(s){int x=fail(error,verbs[i],reply);free(reply);free(fa);free(ta);return x;}free(reply);reply=NULL;}
   free(fa);free(ta);char *payload=smtp_data_payload(from,to,subject,body);if(!payload)return fail(error,"DATA","could not build message");
+  /* DATA payload includes its own final <CRLF>.<CRLF> terminator. */
   int s=smtp_send_command(&r,payload,250,&reply);free(payload);if(s){int x=fail(error,"message",reply);free(reply);return x;}free(reply);reply=NULL;
   char *quit=smtp_command("QUIT",NULL);if(!quit)return fail(error,"QUIT","out of memory");s=smtp_send_command(&r,quit,221,&reply);free(quit);
   if(s){int x=fail(error,"QUIT",reply);free(reply);return x;}free(reply);return 0;
@@ -122,6 +132,7 @@ int smtp_socket_connect(const char *server,const char *port,char **error){
   if(error)*error=NULL;
   struct addrinfo hints,*list=NULL;memset(&hints,0,sizeof hints);hints.ai_family=AF_UNSPEC;hints.ai_socktype=SOCK_STREAM;
   int e=getaddrinfo(server,port,&hints,&list);if(e){if(error)*error=dupstr(gai_strerror(e));return -1;}int fd=-1,saved=ECONNREFUSED;
+  /* Try each resolved IPv4/IPv6 address until one accepts the connection. */
   for(struct addrinfo *a=list;a;a=a->ai_next){fd=socket(a->ai_family,a->ai_socktype,a->ai_protocol);if(fd<0){saved=errno;continue;}if(connect(fd,a->ai_addr,a->ai_addrlen)==0)break;saved=errno;close(fd);fd=-1;}
   freeaddrinfo(list);if(fd<0&&error)*error=dupstr(strerror(saved));return fd;
 }

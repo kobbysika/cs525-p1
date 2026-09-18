@@ -17,12 +17,14 @@ static int usage(FILE *out,int status){
  "  <server>        host name or address of the mail server\n");return status;
 }
 static char *read_body(void){
+ /* Grow the input buffer as needed because stdin has no fixed message limit. */
  size_t used=0,cap=1024;char *p=malloc(cap);if(!p)return NULL;
  for(;;){if(used+1==cap){if(cap>(size_t)-1/2){free(p);return NULL;}cap*=2;char *q=realloc(p,cap);if(!q){free(p);return NULL;}p=q;}
   size_t n=fread(p+used,1,cap-used-1,stdin);used+=n;if(!n){if(ferror(stdin)){free(p);return NULL;}break;}}
  p[used]='\0';return p;
 }
 int main(int argc,char **argv){
+ /* No arguments is a successful usage-display path required by make leak. */
  if(argc==1)return usage(stdout,0);
  const char *from=NULL,*to=NULL,*subject="",*body_arg=NULL,*port="25",*helo="localhost";int ch;opterr=0;
  while((ch=getopt(argc,argv,"f:t:s:b:p:H:"))!=-1)switch(ch){
@@ -33,6 +35,7 @@ int main(int argc,char **argv){
  if(!from||!to||optind+1!=argc||smtp_has_newline(from)||smtp_has_newline(to)||smtp_has_newline(subject)||smtp_has_newline(helo)){
   fprintf(stderr,"Invalid command line or CR/LF in an SMTP field.\n");return usage(stderr,1);
  }
+ /* A -b value is borrowed from argv; stdin input is owned and freed below. */
  char *owned=NULL;const char *body=body_arg;if(!body){owned=read_body();if(!owned){fprintf(stderr,"Could not read message body from stdin.\n");return 2;}body=owned;}
  char *error=NULL;int fd=smtp_socket_connect(argv[optind],port,&error);
  if(fd<0){fprintf(stderr,"Could not connect to %s:%s: %s\n",argv[optind],port,error?error:"unknown error");free(error);free(owned);return 2;}

@@ -6,11 +6,14 @@
 #include "../src/lab.h"
 
 typedef struct { const char *input; size_t at, chunk; char output[8192]; size_t out; } script;
+
+/* Scripted transport supplies server replies and records every client write. */
 static ssize_t fake_read(void *ctx,void *buf,size_t len){
  script *s=ctx;if(!s->input[s->at])return 0;size_t n=strlen(s->input+s->at);if(n>len)n=len;if(s->chunk&&n>s->chunk)n=s->chunk;
  memcpy(buf,s->input+s->at,n);s->at+=n;return (ssize_t)n;
 }
 static ssize_t fake_write(void *ctx,const void *buf,size_t len){
+ /* Deliberately return short writes to exercise smtp_write_all. */
  script *s=ctx;if(len>3)len=3;if(s->out+len>=sizeof s->output)return -1;memcpy(s->output+s->out,buf,len);s->out+=len;s->output[s->out]='\0';return (ssize_t)len;
 }
 static ssize_t failed_read(void *ctx,void *buf,size_t len){(void)ctx;(void)buf;(void)len;return -1;}
